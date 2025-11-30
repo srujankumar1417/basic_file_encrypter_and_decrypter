@@ -1,76 +1,64 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <errno.h>
 
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
 #ifdef _WIN32
     #include <direct.h>
-    #define mkdir(path, mode) _mkdir(path)
+    #define GETCWD _getcwd
 #else
-    #include <sys/stat.h>
-    #include <libgen.h>
+    #include <unistd.h>
+    #define GETCWD getcwd
 #endif
 
 // Encrypt: shift 1 forward
 char encrypt_char(char ch) {
-    if (ch >= 'A' && ch <= 'Z') {
+    if (ch >= 'A' && ch <= 'Z')
         return ((ch - 'A' + 1) % 26) + 'A';
-    }
-    else if (ch >= 'a' && ch <= 'z') {
+    else if (ch >= 'a' && ch <= 'z')
         return ((ch - 'a' + 1) % 26) + 'a';
-    }
-    else if (ch >= '0' && ch <= '9') {
+    else if (ch >= '0' && ch <= '9')
         return ((ch - '0' + 1) % 10) + '0';
-    }
-    else {
+    else
         return ch;
-    }
 }
 
 // Decrypt: shift 1 backward
 char decrypt_char(char ch) {
-    if (ch >= 'A' && ch <= 'Z') {
+    if (ch >= 'A' && ch <= 'Z')
         return ((ch - 'A' - 1 + 26) % 26) + 'A';
-    }
-    else if (ch >= 'a' && ch <= 'z') {
+    else if (ch >= 'a' && ch <= 'z')
         return ((ch - 'a' - 1 + 26) % 26) + 'a';
-    }
-    else if (ch >= '0' && ch <= '9') {
+    else if (ch >= '0' && ch <= '9')
         return ((ch - '0' - 1 + 10) % 10) + '0';
-    }
-    else {
+    else
         return ch;
-    }
-}
-
-// Get absolute path (cross-platform)
-char* get_absolute_path(const char *path) {
-    static char abs_path[512];
-    #ifdef _WIN32
-        if (_fullpath(abs_path, path, sizeof(abs_path)) == NULL) {
-            strncpy(abs_path, path, sizeof(abs_path) - 1);
-            abs_path[sizeof(abs_path) - 1] = '\0';
-        }
-    #else
-        if (realpath(path, abs_path) == NULL) {
-            strncpy(abs_path, path, sizeof(abs_path) - 1);
-            abs_path[sizeof(abs_path) - 1] = '\0';
-        }
-    #endif
-    return abs_path;
 }
 
 void process_file(char input[], char output[], int encrypt) {
-    FILE *fin = fopen(input, "r");
-    if (fin == NULL) {
-        fprintf(stderr, "Could not open input file '%s': %s\n", input, strerror(errno));
-        return;
+    char cwd[256];
+    char full_output[512];
+    
+    GETCWD(cwd, sizeof(cwd));
+    printf("[DEBUG] Current working directory: %s\n", cwd);
+    printf("[DEBUG] Input file: %s\n", input);
+    printf("[DEBUG] Output file (relative): %s\n\n", output);
+
+    /* If output is relative (no path separators), prepend project folder */
+    if (strchr(output, '\\') == NULL && strchr(output, '/') == NULL) {
+        snprintf(full_output, sizeof(full_output), "C:\\Users\\sruja\\OneDrive\\Documents\\CODING\\project\\%s", output);
+        printf("[DEBUG] Output redirected to: %s\n\n", full_output);
+    } else {
+        strncpy(full_output, output, sizeof(full_output) - 1);
+        full_output[sizeof(full_output) - 1] = '\0';
     }
 
-    FILE *fout = fopen(output, "w");
-    if (fout == NULL) {
-        fprintf(stderr, "Could not open output file '%s': %s\n", output, strerror(errno));
-        fclose(fin);
+    FILE *fin = fopen(input, "r");
+    FILE *fout = fopen(full_output, "w");
+
+    if (fin == NULL || fout == NULL) {
+        printf("Error opening files!\n");
+        if (fin == NULL) printf("  Input file not found: %s\n", input);
+        if (fout == NULL) printf("  Cannot create output file: %s\n", full_output);
         return;
     }
 
@@ -86,46 +74,33 @@ void process_file(char input[], char output[], int encrypt) {
     fclose(fin);
     fclose(fout);
 
-    char *abs_out = get_absolute_path(output);
     if (encrypt == 1)
-        printf("Encryption complete! Output saved to:\n  %s\n", abs_out);
+        printf("Encryption done! Saved to %s\n", full_output);
     else
-        printf("Decryption complete! Output saved to:\n  %s\n", abs_out);
+        printf("Decryption done! Saved to %s\n", full_output);
 }
 
 int main(int argc, char **argv) {
-    int choice = 0;
-    char input_filename[256], output_filename[256];
+    int choice;
+    char input_filename[100], output_filename[100];
 
-    /* Command-line mode */
-    if (argc == 4) {
-        if (strcmp(argv[1], "-e") == 0 || strcmp(argv[1], "--encrypt") == 0) {
-            choice = 1;
-        } else if (strcmp(argv[1], "-d") == 0 || strcmp(argv[1], "--decrypt") == 0) {
-            choice = 2;
-        } else {
-            fprintf(stderr, "Invalid option '%s'.\n", argv[1]);
-            fprintf(stderr, "Usage: %s [-e|-d] input_file output_file\n", argv[0]);
-            return 1;
-        }
-
+    /* Command-line mode: encrypt input output */
+    if (argc == 4 && (strcmp(argv[1], "-e") == 0 || strcmp(argv[1], "-d") == 0)) {
+        choice = (strcmp(argv[1], "-e") == 0) ? 1 : 2;
         strncpy(input_filename, argv[2], sizeof(input_filename) - 1);
-        input_filename[sizeof(input_filename) - 1] = '\0';
         strncpy(output_filename, argv[3], sizeof(output_filename) - 1);
+        input_filename[sizeof(input_filename) - 1] = '\0';
         output_filename[sizeof(output_filename) - 1] = '\0';
-
+        
         process_file(input_filename, output_filename, choice);
         return 0;
     }
 
-    /* Interactive fallback */
+    /* Interactive mode */
     printf("1. Encrypt a file\n");
     printf("2. Decrypt a file\n");
     printf("Enter choice: ");
-    if (scanf("%d", &choice) != 1) {
-        fprintf(stderr, "Failed to read choice.\n");
-        return 1;
-    }
+    scanf("%d", &choice);
 
     if (choice != 1 && choice != 2) {
         printf("Invalid choice!\n");
@@ -133,10 +108,10 @@ int main(int argc, char **argv) {
     }
 
     printf("Enter input file name: ");
-    scanf("%255s", input_filename);
+    scanf("%99s", input_filename);
 
     printf("Enter output file name: ");
-    scanf("%255s", output_filename);
+    scanf("%99s", output_filename);
 
     process_file(input_filename, output_filename, choice);
 
